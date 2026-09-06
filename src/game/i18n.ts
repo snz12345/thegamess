@@ -257,6 +257,12 @@ export const translations = {
   defense_units_produced: { tr: 'Savunma birimi üretildi', en: 'Defense units produced' },
   units_produced: { tr: 'birlik', en: 'units' },
   per_month: { tr: '/ay', en: '/mo' },
+
+  // Economy tabs
+  tab_infrastructure: { tr: 'Altyapı', en: 'Infrastructure' },
+  tab_resources: { tr: 'Kaynaklar & Fabrikalar', en: 'Resources & Factories' },
+  factory_summary: { tr: 'Fabrika Özeti', en: 'Factory Summary' },
+  insufficient_materials: { tr: 'Yetersiz malzeme', en: 'Insufficient materials' },
 } as const;
 
 export type TranslationKey = keyof typeof translations;

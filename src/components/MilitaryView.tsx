@@ -3,6 +3,13 @@ import * as Icons from 'lucide-react';
 import type { Lang, GameState, MilitaryBranchId } from '@/game/types';
 import { t } from '@/game/i18n';
 import { formatMoney, formatPercent } from '@/game/utils';
+import {
+  RECRUIT_MATERIAL_COSTS,
+  UPGRADE_MATERIAL_COSTS,
+  UPGRADE_MONEY_COSTS,
+  PROCESSED_GOOD_ICONS,
+  RESOURCE_ICONS,
+} from '@/game/data';
 
 interface Props {
   lang: Lang;
@@ -19,19 +26,51 @@ const BRANCH_ICONS: Record<MilitaryBranchId, keyof typeof Icons> = {
   naval: 'Ship',
 };
 
-function MilitaryViewInner({ lang, state, onRecruit, onUpgrade, onBorderOps, onPeacekeeping }: Props) {
-  const recruitCost = 15;
-  const upgradeCost = 60;
+type MatCost = { steel: number; microchips: number; titanium: number };
 
+function hasMaterials(state: GameState, cost: MatCost): boolean {
+  return state.processedGoods.steel.stockpile >= cost.steel
+    && state.processedGoods.microchips.stockpile >= cost.microchips
+    && state.resources.titanium.stockpile >= cost.titanium;
+}
+
+function MaterialBadges({ cost, available }: { cost: MatCost; available: boolean }) {
+  const parts: { icon: string; amount: number }[] = [];
+  if (cost.steel > 0) parts.push({ icon: PROCESSED_GOOD_ICONS.steel, amount: cost.steel });
+  if (cost.microchips > 0) parts.push({ icon: PROCESSED_GOOD_ICONS.microchips, amount: cost.microchips });
+  if (cost.titanium > 0) parts.push({ icon: RESOURCE_ICONS.titanium, amount: cost.titanium });
+  if (parts.length === 0) return null;
+
+  return (
+    <div className={`flex items-center gap-2 text-[10px] ${available ? 'text-slate-400' : 'text-error-400'}`}>
+      {parts.map((p, i) => (
+        <span key={i} className="flex items-center gap-0.5">
+          {p.icon} {p.amount}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function MilitaryViewInner({ lang, state, onRecruit, onUpgrade, onBorderOps, onPeacekeeping }: Props) {
   const handleRecruit = useCallback((id: MilitaryBranchId) => {
-    if (state.funds < recruitCost) return;
+    const branch = state.branches.find((b) => b.id === id);
+    if (!branch) return;
+    const cost = 15;
+    const matCost = RECRUIT_MATERIAL_COSTS[branch.tier] ?? { steel: 0, microchips: 0, titanium: 0 };
+    if (state.funds < cost || !hasMaterials(state, matCost)) return;
     onRecruit(id);
-  }, [state.funds, onRecruit]);
+  }, [state, onRecruit]);
 
   const handleUpgrade = useCallback((id: MilitaryBranchId) => {
-    if (state.funds < upgradeCost) return;
+    const branch = state.branches.find((b) => b.id === id);
+    if (!branch || branch.tier >= branch.maxTier) return;
+    const targetTier = branch.tier + 1;
+    const cost = UPGRADE_MONEY_COSTS[targetTier] ?? 60;
+    const matCost = UPGRADE_MATERIAL_COSTS[targetTier] ?? { steel: 0, microchips: 0, titanium: 0 };
+    if (state.funds < cost || !hasMaterials(state, matCost)) return;
     onUpgrade(id);
-  }, [state.funds, onUpgrade]);
+  }, [state, onUpgrade]);
 
   return (
     <div className="space-y-4 p-3 pb-24 animate-slide-up">
@@ -49,8 +88,19 @@ function MilitaryViewInner({ lang, state, onRecruit, onUpgrade, onBorderOps, onP
         {state.branches.map((branch) => {
           const IconName = BRANCH_ICONS[branch.id];
           const Icon = Icons[IconName] as React.ComponentType<{ className?: string }>;
-          const canRecruit = state.funds >= recruitCost;
-          const canUpgrade = state.funds >= upgradeCost && branch.tier < branch.maxTier;
+
+          const recruitCost = 15;
+          const recruitMatCost = RECRUIT_MATERIAL_COSTS[branch.tier] ?? { steel: 0, microchips: 0, titanium: 0 };
+          const recruitMatAvailable = hasMaterials(state, recruitMatCost);
+          const canRecruit = state.funds >= recruitCost && recruitMatAvailable;
+          const recruitNeedsMats = recruitMatCost.steel > 0 || recruitMatCost.microchips > 0 || recruitMatCost.titanium > 0;
+
+          const targetTier = branch.tier + 1;
+          const upgradeCost = UPGRADE_MONEY_COSTS[targetTier] ?? 60;
+          const upgradeMatCost = UPGRADE_MATERIAL_COSTS[targetTier] ?? { steel: 0, microchips: 0, titanium: 0 };
+          const upgradeMatAvailable = hasMaterials(state, upgradeMatCost);
+          const canUpgrade = state.funds >= upgradeCost && upgradeMatAvailable && branch.tier < branch.maxTier;
+          const upgradeNeedsMats = upgradeMatCost.steel > 0 || upgradeMatCost.microchips > 0 || upgradeMatCost.titanium > 0;
 
           return (
             <div key={branch.id} className="bg-slate-900 rounded-2xl p-4 border border-slate-800">
@@ -67,25 +117,44 @@ function MilitaryViewInner({ lang, state, onRecruit, onUpgrade, onBorderOps, onP
                 </div>
               </div>
 
-              <div className="flex gap-2">
-                <button
-                  onClick={() => handleRecruit(branch.id)}
-                  disabled={!canRecruit}
-                  className={`flex-1 px-3 py-2 rounded-lg text-xs font-bold transition-all ${
-                    canRecruit ? 'bg-primary-600 text-white hover:bg-primary-500 active:scale-95' : 'bg-slate-800 text-slate-500'
-                  }`}
-                >
-                  {t('recruit', lang)} ({formatMoney(recruitCost)})
-                </button>
-                <button
-                  onClick={() => handleUpgrade(branch.id)}
-                  disabled={!canUpgrade}
-                  className={`flex-1 px-3 py-2 rounded-lg text-xs font-bold transition-all ${
-                    canUpgrade ? 'bg-accent-600 text-white hover:bg-accent-500 active:scale-95' : 'bg-slate-800 text-slate-500'
-                  }`}
-                >
-                  {t('upgrade', lang)} ({formatMoney(upgradeCost)})
-                </button>
+              <div className="space-y-2">
+                <div>
+                  <button
+                    onClick={() => handleRecruit(branch.id)}
+                    disabled={!canRecruit}
+                    className={`w-full px-3 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                      canRecruit ? 'bg-primary-600 text-white hover:bg-primary-500 active:scale-95' : 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                    }`}
+                  >
+                    <Icons.UserPlus className="w-3.5 h-3.5" />
+                    {t('recruit', lang)} ({formatMoney(recruitCost)})
+                  </button>
+                  {recruitNeedsMats && (
+                    <div className={`flex items-center gap-1.5 mt-1 ${recruitMatAvailable ? '' : 'text-error-400'}`}>
+                      {!recruitMatAvailable && <Icons.AlertTriangle className="w-2.5 h-2.5 shrink-0" />}
+                      <MaterialBadges cost={recruitMatCost} available={recruitMatAvailable} />
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <button
+                    onClick={() => handleUpgrade(branch.id)}
+                    disabled={!canUpgrade}
+                    className={`w-full px-3 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                      canUpgrade ? 'bg-accent-600 text-white hover:bg-accent-500 active:scale-95' : 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                    }`}
+                  >
+                    <Icons.ChevronUp className="w-3.5 h-3.5" />
+                    {t('upgrade', lang)} ({formatMoney(upgradeCost)})
+                  </button>
+                  {upgradeNeedsMats && branch.tier < branch.maxTier && (
+                    <div className={`flex items-center gap-1.5 mt-1 ${upgradeMatAvailable ? '' : 'text-error-400'}`}>
+                      {!upgradeMatAvailable && <Icons.AlertTriangle className="w-2.5 h-2.5 shrink-0" />}
+                      <MaterialBadges cost={upgradeMatCost} available={upgradeMatAvailable} />
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           );

@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import type { Lang, GameState, CountryPreset, ViewName, Infrastructure, MilitaryBranchId, RelationStatus, LogEntry, Region, GameEvent, Pact, UNResolution, UNVote, UNResolutionType, ResourceId, ProcessedGoodId, FactoryId, TradeOrder, TradeOrderType } from '@/game/types';
-import { INFRA_PRESETS, BRANCH_PRESETS, FOREIGN_PRESETS, REGION_PRESETS, PACT_PRESETS, ELECTION_INTERVAL, UN_VOTE_INTERVAL, UN_RESOLUTION_TYPES, RESOURCE_IDS, RESOURCE_NAMES, BASE_PRICES, FACTORY_DEFS, createInitialResources, createInitialProcessedGoods, createInitialFactories, createInitialMarketPrices, createInitialTradeOrders } from '@/game/data';
+import { INFRA_PRESETS, BRANCH_PRESETS, FOREIGN_PRESETS, REGION_PRESETS, PACT_PRESETS, ELECTION_INTERVAL, UN_VOTE_INTERVAL, UN_RESOLUTION_TYPES, RESOURCE_IDS, RESOURCE_NAMES, BASE_PRICES, FACTORY_DEFS, RECRUIT_MATERIAL_COSTS, UPGRADE_MATERIAL_COSTS, UPGRADE_MONEY_COSTS, createInitialResources, createInitialProcessedGoods, createInitialFactories, createInitialMarketPrices, createInitialTradeOrders } from '@/game/data';
 import { clamp, uid } from '@/game/utils';
 import { NationSelect } from '@/components/NationSelect';
 import { TopBar } from '@/components/TopBar';
@@ -483,25 +483,55 @@ function App() {
   }, []);
 
   const handleRecruit = useCallback((branchId: MilitaryBranchId) => {
-    const cost = 15;
     setState((prev) => {
-      if (!prev || prev.funds < cost) return prev;
-      const branch = prev.branches.find((b) => b.id === branchId)!;
+      if (!prev) return prev;
+      const cost = 15;
+      if (prev.funds < cost) return prev;
+      const branch = prev.branches.find((b) => b.id === branchId);
+      if (!branch) return prev;
+
+      const matCost = RECRUIT_MATERIAL_COSTS[branch.tier] ?? { steel: 0, microchips: 0, titanium: 0 };
+      const processedGoods = { ...prev.processedGoods };
+      const resources = { ...prev.resources };
+
+      if (processedGoods.steel.stockpile < matCost.steel) return prev;
+      if (processedGoods.microchips.stockpile < matCost.microchips) return prev;
+      if (resources.titanium.stockpile < matCost.titanium) return prev;
+
+      if (matCost.steel > 0) processedGoods.steel = { ...processedGoods.steel, stockpile: processedGoods.steel.stockpile - matCost.steel };
+      if (matCost.microchips > 0) processedGoods.microchips = { ...processedGoods.microchips, stockpile: processedGoods.microchips.stockpile - matCost.microchips };
+      if (matCost.titanium > 0) resources.titanium = { ...resources.titanium, stockpile: resources.titanium.stockpile - matCost.titanium };
+
       const branches = prev.branches.map((b) => b.id === branchId ? { ...b, units: b.units + 5 } : b);
       const log = [...prev.log, { turn: prev.turn, text: { tr: `${branch.name.tr} için 5 birlik alındı`, en: `Recruited 5 units for ${branch.name.en}` } }].slice(-20);
-      return { ...prev, funds: prev.funds - cost, branches, military: clamp(prev.military + 2), log };
+      return { ...prev, funds: prev.funds - cost, branches, military: clamp(prev.military + 2), processedGoods, resources, log };
     });
   }, []);
 
   const handleUpgrade = useCallback((branchId: MilitaryBranchId) => {
-    const cost = 60;
     setState((prev) => {
-      if (!prev || prev.funds < cost) return prev;
+      if (!prev) return prev;
       const branch = prev.branches.find((b) => b.id === branchId);
       if (!branch || branch.tier >= branch.maxTier) return prev;
+      const targetTier = branch.tier + 1;
+      const cost = UPGRADE_MONEY_COSTS[targetTier] ?? 60;
+      if (prev.funds < cost) return prev;
+
+      const matCost = UPGRADE_MATERIAL_COSTS[targetTier] ?? { steel: 0, microchips: 0, titanium: 0 };
+      const processedGoods = { ...prev.processedGoods };
+      const resources = { ...prev.resources };
+
+      if (processedGoods.steel.stockpile < matCost.steel) return prev;
+      if (processedGoods.microchips.stockpile < matCost.microchips) return prev;
+      if (resources.titanium.stockpile < matCost.titanium) return prev;
+
+      if (matCost.steel > 0) processedGoods.steel = { ...processedGoods.steel, stockpile: processedGoods.steel.stockpile - matCost.steel };
+      if (matCost.microchips > 0) processedGoods.microchips = { ...processedGoods.microchips, stockpile: processedGoods.microchips.stockpile - matCost.microchips };
+      if (matCost.titanium > 0) resources.titanium = { ...resources.titanium, stockpile: resources.titanium.stockpile - matCost.titanium };
+
       const branches = prev.branches.map((b) => b.id === branchId ? { ...b, tier: b.tier + 1 } : b);
-      const log = [...prev.log, { turn: prev.turn, text: { tr: `${branch.name.tr} seviye yükseltildi`, en: `${branch.name.en} upgraded` } }].slice(-20);
-      return { ...prev, funds: prev.funds - cost, branches, military: clamp(prev.military + 5), log };
+      const log = [...prev.log, { turn: prev.turn, text: { tr: `${branch.name.tr} seviye ${targetTier}'e yükseltildi`, en: `${branch.name.en} upgraded to tier ${targetTier}` } }].slice(-20);
+      return { ...prev, funds: prev.funds - cost, branches, military: clamp(prev.military + 5), processedGoods, resources, log };
     });
   }, []);
 

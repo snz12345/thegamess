@@ -249,6 +249,26 @@ export const FACTORY_DEFS: { id: FactoryId; name: { tr: string; en: string }; co
   { id: 'defense_complex', name: { tr: 'Gelişmiş Savunma Kompleksi', en: 'Advanced Defense Complex' }, cost: 200, type: 'processing', output: 'microchips', outputAmount: 0, inputs: [{ resource: 'steel', amount: 2 }, { resource: 'microchips', amount: 1 }, { resource: 'titanium', amount: 1 }, { resource: 'rubber', amount: 2 }] },
 ];
 
+export const RECRUIT_MATERIAL_COSTS: Record<number, { steel: number; microchips: number; titanium: number }> = {
+  1: { steel: 0, microchips: 0, titanium: 0 },
+  2: { steel: 0, microchips: 0, titanium: 0 },
+  3: { steel: 2, microchips: 1, titanium: 0 },
+  4: { steel: 3, microchips: 2, titanium: 1 },
+  5: { steel: 4, microchips: 3, titanium: 2 },
+};
+
+export const UPGRADE_MATERIAL_COSTS: Record<number, { steel: number; microchips: number; titanium: number }> = {
+  3: { steel: 5, microchips: 3, titanium: 0 },
+  4: { steel: 8, microchips: 5, titanium: 2 },
+  5: { steel: 12, microchips: 8, titanium: 5 },
+};
+
+export const UPGRADE_MONEY_COSTS: Record<number, number> = {
+  3: 60,
+  4: 80,
+  5: 100,
+};
+
 export const DEFAULT_STORAGE_CAP = 100;
 export const DEFAULT_PROCESSED_STORAGE_CAP = 50;
 
