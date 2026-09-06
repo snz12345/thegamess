@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
-import type { Lang, GameState, CountryPreset, ViewName, Infrastructure, MilitaryBranchId, RelationStatus, LogEntry, Region, GameEvent, Pact, UNResolution, UNVote, UNResolutionType, ResourceId, ProcessedGoodId, FactoryId, TradeOrder, TradeOrderType } from '@/game/types';
-import { INFRA_PRESETS, BRANCH_PRESETS, FOREIGN_PRESETS, REGION_PRESETS, PACT_PRESETS, ELECTION_INTERVAL, UN_VOTE_INTERVAL, UN_RESOLUTION_TYPES, RESOURCE_IDS, RESOURCE_NAMES, BASE_PRICES, FACTORY_DEFS, RECRUIT_MATERIAL_COSTS, UPGRADE_MATERIAL_COSTS, UPGRADE_MONEY_COSTS, createInitialResources, createInitialProcessedGoods, createInitialFactories, createInitialMarketPrices, createInitialTradeOrders } from '@/game/data';
+import type { Lang, GameState, CountryPreset, ViewName, Infrastructure, MilitaryBranchId, RelationStatus, LogEntry, Region, GameEvent, Pact, UNResolution, UNVote, UNResolutionType, ResourceId, ProcessedGoodId, FactoryId, TradeOrder, TradeOrderType, TradeableId } from '@/game/types';
+import { INFRA_PRESETS, BRANCH_PRESETS, FOREIGN_PRESETS, REGION_PRESETS, PACT_PRESETS, ELECTION_INTERVAL, UN_VOTE_INTERVAL, UN_RESOLUTION_TYPES, RESOURCE_IDS, RESOURCE_NAMES, BASE_PRICES, FACTORY_DEFS, RECRUIT_MATERIAL_COSTS, UPGRADE_MATERIAL_COSTS, UPGRADE_MONEY_COSTS, PROCESSED_GOOD_IDS, PROCESSED_BASE_PRICES, PROCESSED_GOOD_NAMES as PROCESSED_GOOD_NAMES_LOOKUP, ALL_TRADEABLE_IDS, createInitialResources, createInitialProcessedGoods, createInitialFactories, createInitialMarketPrices, createInitialTradeOrders } from '@/game/data';
 import { clamp, uid } from '@/game/utils';
 import { NationSelect } from '@/components/NationSelect';
 import { TopBar } from '@/components/TopBar';
@@ -314,28 +314,52 @@ function App() {
       for (const order of prev.tradeOrders) {
         if (!order.active) continue;
         const price = prev.marketPrices[order.resourceId].price;
+        const isResource = order.resourceId in resources;
+        const isProcessed = order.resourceId in processedGoods;
         if (order.type === 'buy') {
           const cost = order.amount * price;
           if (funds >= cost) {
             funds -= cost;
             tradeExpense += cost;
-            const res = resources[order.resourceId];
-            resources[order.resourceId] = {
-              ...res,
-              stockpile: Math.min(res.storageCap, res.stockpile + order.amount),
-            };
+            if (isResource) {
+              const res = resources[order.resourceId as ResourceId];
+              resources[order.resourceId as ResourceId] = {
+                ...res,
+                stockpile: Math.min(res.storageCap, res.stockpile + order.amount),
+              };
+            } else if (isProcessed) {
+              const good = processedGoods[order.resourceId as ProcessedGoodId];
+              processedGoods[order.resourceId as ProcessedGoodId] = {
+                ...good,
+                stockpile: Math.min(good.storageCap, good.stockpile + order.amount),
+              };
+            }
           }
         } else {
-          const res = resources[order.resourceId];
-          const sellAmount = Math.min(order.amount, res.stockpile);
+          let sellAmount = 0;
+          if (isResource) {
+            const res = resources[order.resourceId as ResourceId];
+            sellAmount = Math.min(order.amount, res.stockpile);
+            if (sellAmount > 0) {
+              resources[order.resourceId as ResourceId] = {
+                ...res,
+                stockpile: res.stockpile - sellAmount,
+              };
+            }
+          } else if (isProcessed) {
+            const good = processedGoods[order.resourceId as ProcessedGoodId];
+            sellAmount = Math.min(order.amount, good.stockpile);
+            if (sellAmount > 0) {
+              processedGoods[order.resourceId as ProcessedGoodId] = {
+                ...good,
+                stockpile: good.stockpile - sellAmount,
+              };
+            }
+          }
           if (sellAmount > 0) {
             const revenue = sellAmount * price;
             funds += revenue;
             tradeIncome += revenue;
-            resources[order.resourceId] = {
-              ...res,
-              stockpile: res.stockpile - sellAmount,
-            };
           }
         }
       }
@@ -343,8 +367,10 @@ function App() {
 
       // === Market Price Fluctuation ===
       const marketPrices = { ...prev.marketPrices };
-      for (const id of RESOURCE_IDS) {
-        const basePrice = BASE_PRICES[id];
+      for (const id of ALL_TRADEABLE_IDS) {
+        const basePrice = id in BASE_PRICES
+          ? BASE_PRICES[id as ResourceId]
+          : PROCESSED_BASE_PRICES[id as ProcessedGoodId];
         const current = marketPrices[id];
         const fluctuation = (Math.random() - 0.5) * 2;
         const newPrice = Math.max(1, basePrice * 0.7 + current.price * 0.3 + fluctuation);
@@ -823,7 +849,7 @@ function App() {
   }, []);
 
   // Trade order management
-  const handleAddTradeOrder = useCallback((resourceId: ResourceId, type: TradeOrderType, amount: number) => {
+  const handleAddTradeOrder = useCallback((resourceId: TradeableId, type: TradeOrderType, amount: number) => {
     setState((prev) => {
       if (!prev) return prev;
       const order: TradeOrder = {
@@ -833,11 +859,14 @@ function App() {
         amount,
         active: true,
       };
+      const name = resourceId in RESOURCE_NAMES
+        ? RESOURCE_NAMES[resourceId as ResourceId]
+        : PROCESSED_GOOD_NAMES_LOOKUP[resourceId as ProcessedGoodId];
       const log = [...prev.log, {
         turn: prev.turn,
         text: type === 'buy'
-          ? { tr: `Alış emri: ${amount}x ${RESOURCE_NAMES[resourceId].tr}`, en: `Buy order: ${amount}x ${RESOURCE_NAMES[resourceId].en}` }
-          : { tr: `Satış emri: ${amount}x ${RESOURCE_NAMES[resourceId].tr}`, en: `Sell order: ${amount}x ${RESOURCE_NAMES[resourceId].en}` },
+          ? { tr: `Alış emri: ${amount}x ${name.tr}`, en: `Buy order: ${amount}x ${name.en}` }
+          : { tr: `Satış emri: ${amount}x ${name.tr}`, en: `Sell order: ${amount}x ${name.en}` },
       }].slice(-20);
       return { ...prev, tradeOrders: [...prev.tradeOrders, order], log };
     });

@@ -230,6 +230,14 @@ export const PROCESSED_GOOD_ICONS: Record<ProcessedGoodId, string> = {
   steel: '🏗️', fuel: '⛽', polymers: '🧪', microchips: '💾',
 };
 
+export const PROCESSED_GOOD_IDS: ProcessedGoodId[] = ['steel', 'fuel', 'polymers', 'microchips'];
+
+export const PROCESSED_BASE_PRICES: Record<ProcessedGoodId, number> = {
+  steel: 18, fuel: 15, polymers: 22, microchips: 50,
+};
+
+export const ALL_TRADEABLE_IDS = [...RESOURCE_IDS, ...PROCESSED_GOOD_IDS] as (ResourceId | ProcessedGoodId)[];
+
 export const FACTORY_DEFS: { id: FactoryId; name: { tr: string; en: string }; cost: number; type: 'extraction' | 'processing'; output: ResourceId | ProcessedGoodId; outputAmount: number; inputs?: { resource: ResourceId | ProcessedGoodId; amount: number }[] }[] = [
   // Extraction
   { id: 'oil_rig', name: { tr: 'Petrol Kulesi', en: 'Oil Rig' }, cost: 60, type: 'extraction', output: 'oil', outputAmount: 10 },
@@ -293,10 +301,13 @@ export function createInitialFactories(): FactoryBuilding[] {
   return FACTORY_DEFS.map((f) => ({ id: f.id, count: 0 }));
 }
 
-export function createInitialMarketPrices(): Record<ResourceId, MarketPrice> {
-  const result = {} as Record<ResourceId, MarketPrice>;
+export function createInitialMarketPrices(): Record<ResourceId | ProcessedGoodId, MarketPrice> {
+  const result = {} as Record<ResourceId | ProcessedGoodId, MarketPrice>;
   for (const id of RESOURCE_IDS) {
     result[id] = { resourceId: id, price: BASE_PRICES[id], trend: 0 };
+  }
+  for (const id of PROCESSED_GOOD_IDS) {
+    result[id] = { resourceId: id, price: PROCESSED_BASE_PRICES[id], trend: 0 };
   }
   return result;
 }

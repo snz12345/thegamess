@@ -105,6 +105,8 @@ export type ResourceId =
 
 export type ProcessedGoodId = 'steel' | 'fuel' | 'polymers' | 'microchips';
 
+export type TradeableId = ResourceId | ProcessedGoodId;
+
 export interface ResourceState {
   stockpile: number;
   storageCap: number;
@@ -133,14 +135,14 @@ export type TradeOrderType = 'buy' | 'sell';
 
 export interface TradeOrder {
   id: string;
-  resourceId: ResourceId;
+  resourceId: TradeableId;
   type: TradeOrderType;
   amount: number;
   active: boolean;
 }
 
 export interface MarketPrice {
-  resourceId: ResourceId;
+  resourceId: TradeableId;
   price: number;
   trend: number;
 }
@@ -169,7 +171,7 @@ export interface GameState {
   processedGoods: Record<ProcessedGoodId, ProcessedGoodState>;
   factories: FactoryBuilding[];
   tradeOrders: TradeOrder[];
-  marketPrices: Record<ResourceId, MarketPrice>;
+  marketPrices: Record<TradeableId, MarketPrice>;
   tradeBalance: number;
   log: LogEntry[];
   gameOver: boolean;

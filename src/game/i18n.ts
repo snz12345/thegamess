@@ -263,6 +263,7 @@ export const translations = {
   tab_resources: { tr: 'Kaynaklar & Fabrikalar', en: 'Resources & Factories' },
   factory_summary: { tr: 'Fabrika Özeti', en: 'Factory Summary' },
   insufficient_materials: { tr: 'Yetersiz malzeme', en: 'Insufficient materials' },
+  portfolio_value: { tr: 'Portföy Değeri', en: 'Portfolio Value' },
 } as const;
 
 export type TranslationKey = keyof typeof translations;

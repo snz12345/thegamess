@@ -1,18 +1,18 @@
-import { memo, useState, useCallback } from 'react';
+import { memo, useState, useCallback, useMemo } from 'react';
 import * as Icons from 'lucide-react';
-import type { Lang, GameState, ResourceId, TradeOrderType } from '@/game/types';
+import type { Lang, GameState, ResourceId, ProcessedGoodId, TradeableId, TradeOrderType } from '@/game/types';
 import { t } from '@/game/i18n';
 import {
   RESOURCE_IDS, RESOURCE_NAMES, RESOURCE_ICONS, BASE_PRICES,
-  PROCESSED_GOOD_NAMES, PROCESSED_GOOD_ICONS, FACTORY_DEFS,
+  PROCESSED_GOOD_NAMES, PROCESSED_GOOD_ICONS, PROCESSED_GOOD_IDS,
+  PROCESSED_BASE_PRICES, FACTORY_DEFS, ALL_TRADEABLE_IDS,
 } from '@/game/data';
-import { uid } from '@/game/utils';
 
 interface Props {
   lang: Lang;
   state: GameState;
   onBuildFactory: (factoryId: string) => void;
-  onAddTradeOrder: (resourceId: ResourceId, type: TradeOrderType, amount: number) => void;
+  onAddTradeOrder: (resourceId: TradeableId, type: TradeOrderType, amount: number) => void;
   onRemoveTradeOrder: (orderId: string) => void;
 }
 
@@ -20,6 +20,16 @@ function TrendIcon({ trend }: { trend: number }) {
   if (trend > 0.5) return <Icons.TrendingUp className="w-3.5 h-3.5 text-success-400" />;
   if (trend < -0.5) return <Icons.TrendingDown className="w-3.5 h-3.5 text-error-400" />;
   return <Icons.Minus className="w-3.5 h-3.5 text-slate-500" />;
+}
+
+function tradeableName(id: TradeableId, lang: Lang): string {
+  if (id in RESOURCE_NAMES) return RESOURCE_NAMES[id as ResourceId][lang];
+  return PROCESSED_GOOD_NAMES[id as ProcessedGoodId][lang];
+}
+
+function tradeableIcon(id: TradeableId): string {
+  if (id in RESOURCE_ICONS) return RESOURCE_ICONS[id as ResourceId];
+  return PROCESSED_GOOD_ICONS[id as ProcessedGoodId];
 }
 
 function ResourceCard({
@@ -79,18 +89,25 @@ function ProcessedGoodCard({
   state,
   lang,
 }: {
-  goodId: keyof typeof PROCESSED_GOOD_NAMES;
+  goodId: ProcessedGoodId;
   state: GameState;
   lang: Lang;
 }) {
   const good = state.processedGoods[goodId];
+  const price = state.marketPrices[goodId];
   const pct = Math.min(100, (good.stockpile / good.storageCap) * 100);
 
   return (
     <div className="bg-slate-900 rounded-xl p-3 border border-slate-800">
-      <div className="flex items-center gap-1.5 mb-2">
-        <span className="text-base">{PROCESSED_GOOD_ICONS[goodId]}</span>
-        <span className="text-xs font-bold text-white">{PROCESSED_GOOD_NAMES[goodId][lang]}</span>
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-1.5">
+          <span className="text-base">{PROCESSED_GOOD_ICONS[goodId]}</span>
+          <span className="text-xs font-bold text-white">{PROCESSED_GOOD_NAMES[goodId][lang]}</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <span className="text-xs text-slate-400">${price.price.toFixed(1)}</span>
+          <TrendIcon trend={price.trend} />
+        </div>
       </div>
       <div className="flex items-center justify-between text-[10px] text-slate-500 mb-1">
         <span>{t('stockpile', lang)}: <span className="text-slate-300 font-bold">{good.stockpile.toFixed(0)}</span> / {good.storageCap}</span>
@@ -124,7 +141,7 @@ function FactoryCard({
   const canAfford = funds >= factoryDef.cost;
   const outputName = factoryDef.output in RESOURCE_NAMES
     ? RESOURCE_NAMES[factoryDef.output as ResourceId][lang]
-    : PROCESSED_GOOD_NAMES[factoryDef.output as keyof typeof PROCESSED_GOOD_NAMES][lang];
+    : PROCESSED_GOOD_NAMES[factoryDef.output as ProcessedGoodId][lang];
 
   return (
     <div className="bg-slate-900 rounded-xl p-3 border border-slate-800">
@@ -154,7 +171,7 @@ function FactoryCard({
         {factoryDef.inputs && factoryDef.inputs.map((inp) => {
           const inpName = inp.resource in RESOURCE_NAMES
             ? RESOURCE_NAMES[inp.resource as ResourceId][lang]
-            : PROCESSED_GOOD_NAMES[inp.resource as keyof typeof PROCESSED_GOOD_NAMES][lang];
+            : PROCESSED_GOOD_NAMES[inp.resource as ProcessedGoodId][lang];
           return (
             <div key={inp.resource} className="flex items-center gap-1">
               <Icons.PackageMinus className="w-2.5 h-2.5 text-error-400" />
@@ -168,7 +185,7 @@ function FactoryCard({
 }
 
 function MarketViewInner({ lang, state, onBuildFactory, onAddTradeOrder, onRemoveTradeOrder }: Props) {
-  const [orderResource, setOrderResource] = useState<ResourceId>('oil');
+  const [orderResource, setOrderResource] = useState<TradeableId>('oil');
   const [orderType, setOrderType] = useState<TradeOrderType>('buy');
   const [orderAmount, setOrderAmount] = useState(5);
 
@@ -176,21 +193,37 @@ function MarketViewInner({ lang, state, onBuildFactory, onAddTradeOrder, onRemov
     onAddTradeOrder(orderResource, orderType, orderAmount);
   }, [orderResource, orderType, orderAmount, onAddTradeOrder]);
 
+  const portfolioValue = useMemo(() => {
+    let total = 0;
+    for (const id of RESOURCE_IDS) {
+      total += state.resources[id].stockpile * state.marketPrices[id].price;
+    }
+    for (const id of PROCESSED_GOOD_IDS) {
+      total += state.processedGoods[id].stockpile * state.marketPrices[id].price;
+    }
+    return total;
+  }, [state]);
+
   return (
     <div className="space-y-5 p-3 pb-24 animate-slide-up">
-      {/* Trade Balance */}
-      <div className="bg-slate-900 rounded-2xl p-4 border border-slate-800">
-        <h2 className="text-sm font-bold text-white mb-2 flex items-center gap-2">
-          <Icons.Scale className="w-4 h-4 text-accent-400" />
-          {t('trade_balance', lang)}
-        </h2>
-        <div className="flex items-center justify-between">
-          <span className="text-xs text-slate-400">
-            {state.tradeBalance >= 0 ? t('trade_surplus', lang) : t('trade_deficit', lang)}
-          </span>
-          <span className={`text-lg font-bold ${state.tradeBalance >= 0 ? 'text-success-400' : 'text-error-400'}`}>
-            {state.tradeBalance >= 0 ? '+' : ''}${state.tradeBalance.toFixed(1)}M {t('per_month', lang)}
-          </span>
+      {/* Portfolio Summary Bar */}
+      <div className="grid grid-cols-3 gap-2">
+        <div className="bg-slate-900 rounded-xl p-3 border border-slate-800 text-center">
+          <Icons.Scale className="w-5 h-5 text-accent-400 mx-auto mb-1" />
+          <p className="text-[10px] text-slate-400">{t('trade_balance', lang)}</p>
+          <p className={`text-sm font-bold ${state.tradeBalance >= 0 ? 'text-success-400' : 'text-error-400'}`}>
+            {state.tradeBalance >= 0 ? '+' : ''}${state.tradeBalance.toFixed(1)}M
+          </p>
+        </div>
+        <div className="bg-slate-900 rounded-xl p-3 border border-slate-800 text-center">
+          <Icons.Wallet className="w-5 h-5 text-primary-400 mx-auto mb-1" />
+          <p className="text-[10px] text-slate-400">{t('portfolio_value', lang)}</p>
+          <p className="text-sm font-bold text-primary-400">${portfolioValue.toFixed(0)}M</p>
+        </div>
+        <div className="bg-slate-900 rounded-xl p-3 border border-slate-800 text-center">
+          <Icons.ArrowLeftRight className="w-5 h-5 text-accent-400 mx-auto mb-1" />
+          <p className="text-[10px] text-slate-400">{t('active_orders', lang)}</p>
+          <p className="text-sm font-bold text-white">{state.tradeOrders.length}</p>
         </div>
       </div>
 
@@ -214,7 +247,7 @@ function MarketViewInner({ lang, state, onBuildFactory, onAddTradeOrder, onRemov
           {t('processed_goods', lang)}
         </h3>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          {(Object.keys(PROCESSED_GOOD_NAMES) as (keyof typeof PROCESSED_GOOD_NAMES)[]).map((id) => (
+          {PROCESSED_GOOD_IDS.map((id) => (
             <ProcessedGoodCard key={id} goodId={id} state={state} lang={lang} />
           ))}
         </div>
@@ -227,14 +260,16 @@ function MarketViewInner({ lang, state, onBuildFactory, onAddTradeOrder, onRemov
           {t('global_prices', lang)}
         </h3>
         <div className="bg-slate-900 rounded-xl p-3 border border-slate-800">
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-            {RESOURCE_IDS.map((id) => {
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {ALL_TRADEABLE_IDS.map((id) => {
               const price = state.marketPrices[id];
               return (
                 <div key={id} className="flex items-center justify-between text-xs">
-                  <span className="text-slate-400">{RESOURCE_ICONS[id]}</span>
-                  <span className="text-white font-bold">${price.price.toFixed(1)}</span>
-                  <TrendIcon trend={price.trend} />
+                  <span className="text-slate-400">{tradeableIcon(id)} {tradeableName(id, lang)}</span>
+                  <div className="flex items-center gap-1">
+                    <span className="text-white font-bold">${price.price.toFixed(1)}</span>
+                    <TrendIcon trend={price.trend} />
+                  </div>
                 </div>
               );
             })}
@@ -253,12 +288,19 @@ function MarketViewInner({ lang, state, onBuildFactory, onAddTradeOrder, onRemov
           <div className="flex flex-wrap gap-2 items-center">
             <select
               value={orderResource}
-              onChange={(e) => setOrderResource(e.target.value as ResourceId)}
+              onChange={(e) => setOrderResource(e.target.value as TradeableId)}
               className="bg-slate-800 text-white text-xs rounded-lg px-2 py-1.5 border border-slate-700"
             >
-              {RESOURCE_IDS.map((id) => (
-                <option key={id} value={id}>{RESOURCE_ICONS[id]} {RESOURCE_NAMES[id][lang]}</option>
-              ))}
+              <optgroup label={t('raw_materials', lang)}>
+                {RESOURCE_IDS.map((id) => (
+                  <option key={id} value={id}>{RESOURCE_ICONS[id]} {RESOURCE_NAMES[id][lang]}</option>
+                ))}
+              </optgroup>
+              <optgroup label={t('processed_goods', lang)}>
+                {PROCESSED_GOOD_IDS.map((id) => (
+                  <option key={id} value={id}>{PROCESSED_GOOD_ICONS[id]} {PROCESSED_GOOD_NAMES[id][lang]}</option>
+                ))}
+              </optgroup>
             </select>
             <select
               value={orderType}
@@ -298,13 +340,13 @@ function MarketViewInner({ lang, state, onBuildFactory, onAddTradeOrder, onRemov
               return (
                 <div key={order.id} className="bg-slate-900 rounded-xl p-3 border border-slate-800 flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <span className="text-base">{RESOURCE_ICONS[order.resourceId]}</span>
+                    <span className="text-base">{tradeableIcon(order.resourceId)}</span>
                     <div>
                       <span className={`text-xs font-bold ${order.type === 'buy' ? 'text-success-400' : 'text-primary-400'}`}>
                         {order.type === 'buy' ? t('buy_order', lang) : t('sell_order', lang)}
                       </span>
                       <span className="text-xs text-slate-400 ml-2">
-                        {order.amount}x {RESOURCE_NAMES[order.resourceId][lang]} @ ${price.toFixed(1)}
+                        {order.amount}x {tradeableName(order.resourceId, lang)} @ ${price.toFixed(1)}
                       </span>
                     </div>
                   </div>
