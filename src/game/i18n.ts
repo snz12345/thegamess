@@ -264,6 +264,15 @@ export const translations = {
   factory_summary: { tr: 'Fabrika Özeti', en: 'Factory Summary' },
   insufficient_materials: { tr: 'Yetersiz malzeme', en: 'Insufficient materials' },
   portfolio_value: { tr: 'Portföy Değeri', en: 'Portfolio Value' },
+  map_country_detail: { tr: 'Ülke Detayları', en: 'Country Details' },
+  map_est_military: { tr: 'Tahmini Askeri Güç', en: 'Est. Military Power' },
+  map_diplomatic_state: { tr: 'Diplomatik Durum', en: 'Diplomatic State' },
+  map_trade_status: { tr: 'Ticaret Durumu', en: 'Trade Status' },
+  map_sanction_status: { tr: 'Yaptırım Durumu', en: 'Sanction Status' },
+  map_status_active: { tr: 'Aktif', en: 'Active' },
+  map_status_none: { tr: 'Yok', en: 'None' },
+  map_deploy_military: { tr: 'Askeri Sevkiyat', en: 'Deploy Military' },
+  map_no_actions: { tr: 'Bu ülke için eylem yok', en: 'No actions available for this nation' },
 } as const;
 
 export type TranslationKey = keyof typeof translations;

@@ -3,7 +3,7 @@ import { ComposableMap, Geographies, Geography, ZoomableGroup } from 'react-simp
 import * as Icons from 'lucide-react';
 import type { Lang, GameState, ForeignNation, RelationStatus } from '@/game/types';
 import { t } from '@/game/i18n';
-import { NATION_ISO_MAP, FOREIGN_PRESETS } from '@/game/data';
+import { NATION_ISO_MAP, FOREIGN_PRESETS, RESOURCE_IDS, RESOURCE_ICONS, RESOURCE_NAMES } from '@/game/data';
 
 const GEO_URL = 'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json';
 
@@ -34,6 +34,21 @@ const COUNTRY_COLORS: Record<string, string> = {
   selected: '#f59e0b',
 };
 
+const NATION_MILITARY_ESTIMATES: Record<string, number> = {
+  usa: 90, rus: 85, chn: 80, deu: 45, gbr: 50, jpn: 40, fra: 55, bra: 35,
+};
+
+const NATION_KEY_RESOURCES: Record<string, string[]> = {
+  usa: ['oil', 'copper', 'grain'],
+  rus: ['oil', 'gas', 'iron'],
+  chn: ['rare_earth', 'iron', 'rubber'],
+  deu: ['iron', 'copper', 'lithium'],
+  gbr: ['oil', 'gas', 'titanium'],
+  jpn: ['copper', 'lithium', 'titanium'],
+  fra: ['oil', 'bauxite', 'grain'],
+  bra: ['iron', 'rubber', 'grain'],
+};
+
 function getNationStatus(
   isoCode: number,
   state: GameState,
@@ -58,6 +73,32 @@ function isoToForeignId(isoCode: number, state: GameState): string | null {
   if (f) return f.id;
   if (NATION_ISO_MAP[state.countryId] === isoCode) return state.countryId;
   return null;
+}
+
+function RelationBadge({ relation, lang }: { relation: RelationStatus; lang: Lang }) {
+  const colors: Record<RelationStatus, string> = {
+    allied: 'bg-primary-950/50 text-primary-400 border-primary-500/30',
+    friendly: 'bg-success-950/50 text-success-400 border-success-500/30',
+    neutral: 'bg-slate-800 text-slate-400 border-slate-700',
+    hostile: 'bg-error-950/50 text-error-400 border-error-500/30',
+  };
+  return (
+    <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold border ${colors[relation]}`}>
+      {t(relation as never, lang)}
+    </span>
+  );
+}
+
+function DetailRow({ icon, label, value, valueColor }: { icon: React.ReactNode; label: string; value: string; valueColor?: string }) {
+  return (
+    <div className="flex items-center justify-between py-2 border-b border-slate-800 last:border-0">
+      <div className="flex items-center gap-2">
+        <span className="text-slate-500">{icon}</span>
+        <span className="text-xs text-slate-400">{label}</span>
+      </div>
+      <span className={`text-xs font-bold ${valueColor ?? 'text-white'}`}>{value}</span>
+    </div>
+  );
 }
 
 function WorldMapInner({ lang, state, onSelectRegion, onMapAction }: Props) {
@@ -104,7 +145,16 @@ function WorldMapInner({ lang, state, onSelectRegion, onMapAction }: Props) {
     const foreignId = isoToForeignId(selectedIso, state);
     if (!foreignId) return null;
     if (foreignId === state.countryId) {
-      return { id: state.countryId, name: { tr: state.countryId, en: state.countryId }, flag: '🏳️', relation: 'allied' as RelationStatus, tradeDeal: false, sanction: false, isPlayer: true };
+      const country = FOREIGN_PRESETS.find((f) => f.id === state.countryId);
+      return {
+        id: state.countryId,
+        name: country ? country.name : { tr: state.countryId, en: state.countryId },
+        flag: country ? country.flag : '🏳️',
+        relation: 'allied' as RelationStatus,
+        tradeDeal: false,
+        sanction: false,
+        isPlayer: true,
+      };
     }
     const foreign = state.foreign.find((f) => f.id === foreignId);
     if (!foreign) return null;
@@ -114,6 +164,7 @@ function WorldMapInner({ lang, state, onSelectRegion, onMapAction }: Props) {
   const handleAction = useCallback((action: MapAction) => {
     if (!selectedNation || selectedNation.isPlayer) return;
     onMapAction(selectedNation.id, action);
+    setSelectedIso(null);
   }, [selectedNation, onMapAction]);
 
   const handleClosePanel = useCallback(() => {
@@ -228,94 +279,170 @@ function WorldMapInner({ lang, state, onSelectRegion, onMapAction }: Props) {
         )}
       </div>
 
-      {/* Country Action Panel */}
+      {/* Country Detail Modal */}
       {selectedNation && (
-        <div className="bg-slate-900 border border-slate-700 rounded-2xl p-4 animate-slide-up">
-          <div className="flex items-start justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <span className="text-2xl">{selectedNation.flag}</span>
-              <div>
-                <h3 className="font-bold text-white text-sm">
-                  {selectedNation.isPlayer
-                    ? `${selectedNation.name[lang]} (${t('your_country', lang)})`
-                    : (FOREIGN_PRESETS.find((f) => f.id === selectedNation.id)?.name[lang] ?? selectedNation.name[lang])
-                  }
-                </h3>
-                {!selectedNation.isPlayer && (
-                  <span className={`text-xs font-semibold ${
-                    selectedNation.relation === 'allied' ? 'text-primary-400'
-                    : selectedNation.relation === 'hostile' ? 'text-error-400'
-                    : selectedNation.relation === 'friendly' ? 'text-success-400'
-                    : 'text-slate-400'
-                  }`}>
-                    {t(selectedNation.relation as never, lang)}
-                  </span>
-                )}
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-slate-900 border border-slate-700 max-w-sm w-full rounded-2xl animate-slide-up max-h-[85vh] overflow-y-auto no-scrollbar">
+            {/* Header */}
+            <div className="flex items-start justify-between p-4 pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-3">
+                <span className="text-3xl">{selectedNation.flag}</span>
+                <div>
+                  <h3 className="font-bold text-white text-base">
+                    {selectedNation.isPlayer
+                      ? `${selectedNation.name[lang]} (${t('your_country', lang)})`
+                      : (FOREIGN_PRESETS.find((f) => f.id === selectedNation.id)?.name[lang] ?? selectedNation.name[lang])
+                    }
+                  </h3>
+                  {!selectedNation.isPlayer && <RelationBadge relation={selectedNation.relation} lang={lang} />}
+                </div>
               </div>
+              <button
+                onClick={handleClosePanel}
+                className="text-slate-500 hover:text-slate-300 transition-colors shrink-0"
+              >
+                <Icons.X className="w-5 h-5" />
+              </button>
             </div>
-            <button
-              onClick={handleClosePanel}
-              className="text-slate-500 hover:text-slate-300 transition-colors"
-            >
-              <Icons.X className="w-5 h-5" />
-            </button>
+
+            {/* Country Details */}
+            <div className="px-4 py-3">
+              {selectedNation.isPlayer ? (
+                <div className="space-y-1">
+                  <DetailRow
+                    icon={<Icons.Swords className="w-4 h-4" />}
+                    label={t('military', lang)}
+                    value={`${Math.round(state.military)}`}
+                    valueColor="text-error-400"
+                  />
+                  <DetailRow
+                    icon={<Icons.Building2 className="w-4 h-4" />}
+                    label={t('infrastructure', lang)}
+                    value={`${Math.round(state.infrastructure)}`}
+                    valueColor="text-primary-400"
+                  />
+                  <DetailRow
+                    icon={<Icons.Globe className="w-4 h-4" />}
+                    label={t('softPower', lang)}
+                    value={`${Math.round(state.softPower)}`}
+                    valueColor="text-teal-400"
+                  />
+                  <DetailRow
+                    icon={<Icons.Wallet className="w-4 h-4" />}
+                    label={t('funds', lang)}
+                    value={`$${state.funds.toFixed(0)}M`}
+                    valueColor="text-success-400"
+                  />
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  <DetailRow
+                    icon={<Icons.Swords className="w-4 h-4" />}
+                    label={t('map_est_military', lang)}
+                    value={`${NATION_MILITARY_ESTIMATES[selectedNation.id] ?? 30}`}
+                    valueColor="text-error-400"
+                  />
+                  <DetailRow
+                    icon={<Icons.Handshake className="w-4 h-4" />}
+                    label={t('map_diplomatic_state', lang)}
+                    value={t(selectedNation.relation as never, lang)}
+                    valueColor={
+                      selectedNation.relation === 'allied' ? 'text-primary-400'
+                      : selectedNation.relation === 'hostile' ? 'text-error-400'
+                      : selectedNation.relation === 'friendly' ? 'text-success-400'
+                      : 'text-slate-400'
+                    }
+                  />
+                  <DetailRow
+                    icon={<Icons.TrendingUp className="w-4 h-4" />}
+                    label={t('map_trade_status', lang)}
+                    value={selectedNation.tradeDeal ? t('map_status_active', lang) : t('map_status_none', lang)}
+                    valueColor={selectedNation.tradeDeal ? 'text-success-400' : 'text-slate-500'}
+                  />
+                  <DetailRow
+                    icon={<Icons.Ban className="w-4 h-4" />}
+                    label={t('map_sanction_status', lang)}
+                    value={selectedNation.sanction ? t('map_status_active', lang) : t('map_status_none', lang)}
+                    valueColor={selectedNation.sanction ? 'text-error-400' : 'text-slate-500'}
+                  />
+
+                  {/* Key Resources */}
+                  <div className="pt-2">
+                    <div className="flex items-center gap-1.5 mb-2">
+                      <Icons.Boxes className="w-4 h-4 text-accent-400" />
+                      <span className="text-xs text-slate-400 font-semibold">{t('raw_materials', lang)}</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {(NATION_KEY_RESOURCES[selectedNation.id] ?? []).map((resId) => (
+                        <span key={resId} className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-800 text-[10px] text-slate-300">
+                          {RESOURCE_ICONS[resId as keyof typeof RESOURCE_ICONS]} {RESOURCE_NAMES[resId as keyof typeof RESOURCE_NAMES][lang]}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Action Buttons */}
+            {!selectedNation.isPlayer && (
+              <div className="p-4 pt-2 grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => handleAction('war')}
+                  disabled={selectedNation.relation === 'allied'}
+                  className={`flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-bold transition-all active:scale-95 ${
+                    selectedNation.relation === 'allied'
+                      ? 'bg-slate-800 text-slate-600 cursor-not-allowed'
+                      : 'bg-error-500/10 border border-error-500/30 text-error-400 hover:bg-error-500 hover:text-white'
+                  }`}
+                >
+                  <Icons.Swords className="w-3.5 h-3.5" />
+                  {t('declare_war', lang)}
+                </button>
+                <button
+                  onClick={() => handleAction('diplomacy')}
+                  className="flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-bold bg-primary-500/10 border border-primary-500/30 text-primary-400 hover:bg-primary-500 hover:text-white transition-all active:scale-95"
+                >
+                  <Icons.Handshake className="w-3.5 h-3.5" />
+                  {t('open_diplomacy', lang)}
+                </button>
+                <button
+                  onClick={() => handleAction('trade')}
+                  disabled={selectedNation.tradeDeal || selectedNation.sanction}
+                  className={`flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-bold transition-all active:scale-95 ${
+                    selectedNation.tradeDeal || selectedNation.sanction
+                      ? 'bg-slate-800 text-slate-600 cursor-not-allowed'
+                      : 'bg-success-500/10 border border-success-500/30 text-success-400 hover:bg-success-500 hover:text-white'
+                  }`}
+                >
+                  <Icons.TrendingUp className="w-3.5 h-3.5" />
+                  {t('propose_trade', lang)}
+                </button>
+                <button
+                  onClick={() => handleAction('intelligence')}
+                  disabled={selectedNation.relation !== 'hostile' || state.funds < 10}
+                  className={`flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-bold transition-all active:scale-95 ${
+                    selectedNation.relation !== 'hostile' || state.funds < 10
+                      ? 'bg-slate-800 text-slate-600 cursor-not-allowed'
+                      : 'bg-accent-500/10 border border-accent-500/30 text-accent-400 hover:bg-accent-500 hover:text-white'
+                  }`}
+                >
+                  <Icons.Eye className="w-3.5 h-3.5" />
+                  {t('send_intelligence', lang)}
+                </button>
+              </div>
+            )}
+
+            {selectedNation.isPlayer && (
+              <div className="p-4 pt-2 text-center">
+                <p className="text-xs text-slate-500">{t('your_country', lang)}</p>
+              </div>
+            )}
           </div>
-
-          {!selectedNation.isPlayer && (
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                onClick={() => handleAction('war')}
-                disabled={selectedNation.relation === 'allied'}
-                className={`flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-bold transition-all active:scale-95 ${
-                  selectedNation.relation === 'allied'
-                    ? 'bg-slate-800 text-slate-600 cursor-not-allowed'
-                    : 'bg-error-500/10 border border-error-500/30 text-error-400 hover:bg-error-500 hover:text-white'
-                }`}
-              >
-                <Icons.Swords className="w-3.5 h-3.5" />
-                {t('declare_war', lang)}
-              </button>
-              <button
-                onClick={() => handleAction('diplomacy')}
-                className="flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-bold bg-primary-500/10 border border-primary-500/30 text-primary-400 hover:bg-primary-500 hover:text-white transition-all active:scale-95"
-              >
-                <Icons.Handshake className="w-3.5 h-3.5" />
-                {t('open_diplomacy', lang)}
-              </button>
-              <button
-                onClick={() => handleAction('trade')}
-                disabled={selectedNation.tradeDeal || selectedNation.sanction}
-                className={`flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-bold transition-all active:scale-95 ${
-                  selectedNation.tradeDeal || selectedNation.sanction
-                    ? 'bg-slate-800 text-slate-600 cursor-not-allowed'
-                    : 'bg-success-500/10 border border-success-500/30 text-success-400 hover:bg-success-500 hover:text-white'
-                }`}
-              >
-                <Icons.TrendingUp className="w-3.5 h-3.5" />
-                {t('propose_trade', lang)}
-              </button>
-              <button
-                onClick={() => handleAction('intelligence')}
-                disabled={selectedNation.relation !== 'hostile' || state.funds < 10}
-                className={`flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-bold transition-all active:scale-95 ${
-                  selectedNation.relation !== 'hostile' || state.funds < 10
-                    ? 'bg-slate-800 text-slate-600 cursor-not-allowed'
-                    : 'bg-accent-500/10 border border-accent-500/30 text-accent-400 hover:bg-accent-500 hover:text-white'
-                }`}
-              >
-                <Icons.Eye className="w-3.5 h-3.5" />
-                {t('send_intelligence', lang)}
-              </button>
-            </div>
-          )}
-
-          {selectedNation.isPlayer && (
-            <p className="text-xs text-slate-500 text-center py-2">{t('your_country', lang)}</p>
-          )}
         </div>
       )}
 
-      {/* Region list (preserved from original) */}
+      {/* Region list */}
       <div className="grid gap-3">
         {state.regions.map((reg) => {
           const ownerColor = reg.owner === 'player' ? 'text-success-400' : reg.owner === 'enemy' ? 'text-error-400' : 'text-accent-400';
